@@ -1,0 +1,146 @@
+CREATING TABLE:
+
+CREATE TABLE `auction_house`.`auction`  (
+  `auction_id` int UNSIGNED NOT NULL AUTO_INCREMENT,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `expires_at` timestamp NOT NULL,
+  `user_id` int UNSIGNED NOT NULL,
+  `category_id` int UNSIGNED NOT NULL,
+  `title` varchar(255) NOT NULL,
+  `description` text NULL,
+  `starting_price` decimal(10, 2) NOT NULL,
+  PRIMARY KEY (`auction_id`)
+);
+
+
+
+CREATE TABLE `auction_house`.`category`  (
+  `category_id` int UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) NOT NULL,
+  PRIMARY KEY (`category_id`)
+);
+
+
+CREATE TABLE `auction_house`.`offer`  (
+  `offer_id` int UNSIGNED NOT NULL AUTO_INCREMENT,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `user_id` int UNSIGNED NOT NULL,
+  `auction_id` int UNSIGNED NOT NULL,
+  `price` decimal(10, 2) UNSIGNED NOT NULL,
+  PRIMARY KEY (`offer_id`)
+);
+
+CREATE TABLE `auction_house`.`user`  (
+  `user_id` int UNSIGNED NOT NULL AUTO_INCREMENT,
+  `first_name` varchar(50) NOT NULL,
+  `last_name` varchar(100) NOT NULL,
+  `address` varchar(255) NOT NULL,
+  `phone` varchar(20) NOT NULL,
+  `username` varchar(50) NOT NULL,
+  PRIMARY KEY (`user_id`)
+);
+
+
+UNIQUE:
+
+ALTER TABLE `auction_house`.`category` 
+ADD UNIQUE INDEX `uq_category_name`(`name`);
+
+ALTER TABLE `auction_house`.`user` 
+ADD UNIQUE INDEX `uq_user_username`(`username`);
+
+
+FOREIGN KEYS:
+
+ALTER TABLE `auction_house`.`auction` 
+ADD CONSTRAINT `fk_auction_user_id` FOREIGN KEY (`user_id`) REFERENCES `auction_house`.`user` (`user_id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+ADD CONSTRAINT `fk_auction_category_id` FOREIGN KEY (`category_id`) REFERENCES `auction_house`.`category` (`category_id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE `auction_house`.`offer` 
+ADD CONSTRAINT `fk_offer_auction_id` FOREIGN KEY (`auction_id`) REFERENCES `auction_house`.`auction` (`auction_id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+ADD CONSTRAINT `fk_offer_user_id` FOREIGN KEY (`user_id`) REFERENCES `auction_house`.`user` (`user_id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+
+TRIGGERS:
+
+CREATE TRIGGER `trigger_offer_bi` BEFORE INSERT ON `offer` FOR EACH ROW 
+IF NEW.price < (SELECT MAX(price) FROM offer WHERE auction_id = NEW.auction_id)  + 100 THEN 
+	SIGNAL SQLSTATE '50001' SET MESSAGE_TEXT = 'New price needs to be for at least 100$ higher then current highest price.';
+END IF;
+;
+
+CREATE TRIGGER `trigger_offer_bu` BEFORE UPDATE ON `offer` FOR EACH ROW 
+IF NEW.price < (SELECT MAX(price) FROM offer WHERE auction_id = NEW.auction_id)  + 100 THEN 
+	SIGNAL SQLSTATE '50001' SET MESSAGE_TEXT = 'New price needs to be for at least 100$ higher then current highest price.';
+END IF;
+
+
+CREATE TRIGGER `trigger_auction_bi` BEFORE INSERT ON `auction` FOR EACH ROW 
+BEGIN
+	IF LENGTH(NEW.title) <= 5 THEN
+		SIGNAL SQLSTATE '50002' SET MESSAGE_TEXT = 'Title needs to be longer than 5 characters.';
+		END IF;
+		
+	IF NEW.starting_price < 1000 THEN
+		SIGNAL SQLSTATE '50003' SET MESSAGE_TEXT  = 'Minimum starting price needs is 1000$.';
+		END IF;
+END	
+;
+
+
+CREATE TRIGGER `trigger_auction_bu` BEFORE UPDATE ON `auction` FOR EACH ROW BEGIN
+	IF LENGTH(NEW.title) <= 5 THEN
+		SIGNAL SQLSTATE '50002' SET MESSAGE_TEXT = 'Title needs to be longer than 5 characters.';
+		END IF;
+		
+	IF NEW.starting_price != OLD.starting_price THEN
+		SIGNAL SQLSTATE '50004' SET MESSAGE_TEXT  = 'Starting price cannot be changed.';
+		END IF;
+END;
+
+QUERIES:
+
+-- List of newest offers for selected auction (auction_id = 1)
+
+SELECT
+	o.created_at,
+	u.first_name,
+	u.last_name,
+	u.username,
+	o.price 
+FROM
+	offer o 
+INNER JOIN `user` u ON u.user_id = o.user_id 
+WHERE o.auction_id = 1
+ORDER BY o.created_at DESC
+
+
+-- List of auctions with current best offers (max prices) if there is one (if we dont have offer then NULL)
+-- 1. method
+
+SELECT
+	a.*,
+	u.username,
+	( SELECT MAX( o.price ) FROM offer o WHERE o.auction_id = a.auction_id ) AS max_price 
+FROM
+	auction a,
+	`user` u 
+WHERE
+	u.user_id = a.user_id 
+ORDER BY
+	a.expires_at
+
+-- 2. method same result but view created
+CREATE VIEW best_offers AS
+SELECT
+	a.*,
+	u.username,
+	MAX( o.price ) AS max_price 
+FROM
+	auction a
+	INNER JOIN `user` u ON a.user_id = u.user_id
+	LEFT JOIN offer o ON o.auction_id = a.auction_id 
+GROUP BY
+	a.auction_id 
+ORDER BY
+	a.expires_at
