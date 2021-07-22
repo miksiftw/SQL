@@ -144,3 +144,4 @@ GROUP BY
 	a.auction_id 
 ORDER BY
 	a.expires_at
+ 
