@@ -130,7 +130,7 @@ WHERE
 ORDER BY
 	a.expires_at
 
--- 2. method same result but view created
+-- 2. method same result and view created
 CREATE VIEW best_offers AS
 SELECT
 	a.*,
